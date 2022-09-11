@@ -1,0 +1,58 @@
+#!/usr/local/bin/perl -w
+
+use strict;
+ 
+
+
+#23 910 
+my %hash;
+
+
+open IN, "$ARGV[0]" or die "";
+open AA, "$ARGV[1]" or die "";
+open BB, "$ARGV[2]" or die "";
+my ($chr, $boundA1 ,$boundA2, $boundB1, $boundB2);
+my $PASS;
+while (<IN>){
+	chomp;
+	my @line = split/\t/, $_;
+	$PASS=$_;
+	$chr=$line[0];
+	$boundA1=$line[4]-20000;
+	$boundA2=$line[4]+20000;
+	$boundB1=$line[5]-20000;
+	$boundB2=$line[5]+20000;
+}
+close IN;
+my $aa_pass="fail";
+my $ab_pass="fail";
+
+while (<AA>){
+	chomp;
+	my @line=split/\t/, $_;
+	next if ( $line[0] ne $chr ) ;
+	if ( ( $boundA1  <= $line[1] <= $boundA2) || ($boundA1 <=$line[2] <= $boundA2) || ($line[1] <= $boundA1 <=$boundA2 <= $line[2] )){ $aa_pass="pass"; }
+        if ( ( $boundB1  <= $line[1] <= $boundB2) || ($boundB1 <=$line[2] <= $boundB2) || ($line[1] <= $boundB1 <=$boundB2 <= $line[2] )){ $ab_pass="pass"; }
+}
+
+close AA;
+
+my $ba_pass="fail";
+my $bb_pass="fail";
+
+while (<BB>){
+	chomp;
+        my @line=split/\t/, $_;
+        next if ( $line[0] ne $chr ) ;
+        if ( ( $boundA1  <= $line[1] <= $boundA2) || ($boundA1 <=$line[2] <= $boundA2) || ($line[1] <= $boundA1 <=$boundA2 <= $line[2] )){ $ba_pass="pass"; }
+        if ( ( $boundB1  <= $line[1] <= $boundB2) || ($boundB1 <=$line[2] <= $boundB2) || ($line[1] <= $boundB1 <=$boundB2 <= $line[2] )){ $bb_pass="pass"; }
+}
+
+close BB;
+
+
+if ($aa_pass eq "pass"  &&  $bb_pass eq "pass" ){ print "$PASS\n" ; }
+if ($ab_pass eq "pass" &&  $ba_pass eq "pass" ) {print "$PASS\n";}
+
+
+
