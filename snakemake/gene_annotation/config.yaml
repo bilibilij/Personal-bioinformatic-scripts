@@ -1,0 +1,58 @@
+
+
+genome: "/usr_storage/jcf/2.zhugecai/00.diploid/2.anno/0.input/Ovio_HIFI_genome_Chr.fasta"
+homo: "/usr_storage/jcf/2.zhugecai/00.diploid/2.anno/0.input/protein_dir/homologous.fasta"
+
+EDTA: "/usr_storage/jcf/2.zhugecai/00.diploid/2.anno/0.input/EDTA-master/EDTA.pl"
+geta: "/usr_storage/software/geta-2.4.13/"
+FASTP: "/usr_storage/jcf/.conda/envs/fastp/bin/fastp"
+SAMTOOLS: "/usr_storage/software/samtools-1.11/bin/samtools"
+HISAT_DIR: "/usr_storage/software/hisat2-2.2.1/"
+Rscript: "/usr_storage/jcf/.conda/envs/R/bin/Rscript"
+
+
+
+sp: "Ovio"
+
+ONT:
+    N01: /usr_storage/jcf/2.zhugecai/00.diploid/1.ONT_RNA_mapping/0.data/N01.clean.fastq.gz
+    N02: /usr_storage/jcf/2.zhugecai/00.diploid/1.ONT_RNA_mapping/0.data/N02.clean.fastq.gz
+    N03: /usr_storage/jcf/2.zhugecai/00.diploid/1.ONT_RNA_mapping/0.data/N03.clean.fastq.gz
+
+
+
+rna:
+    OvCRR564415:
+        r1: /usr_storage/data/zhugecai_published/CRA008040/CRR564415/CRR564415_f1.fq.gz
+        r2: /usr_storage/data/zhugecai_published/CRA008040/CRR564415/CRR564415_r2.fq.gz
+    OvCRR564418:
+        r1: /usr_storage/data/zhugecai_published/CRA008040/CRR564418/CRR564418_f1.fq.gz
+        r2: /usr_storage/data/zhugecai_published/CRA008040/CRR564418/CRR564418_r2.fq.gz
+    OvCRR564421:
+        r1: /usr_storage/data/zhugecai_published/CRA008040/CRR564421/CRR564421_f1.fq.gz
+        r2: /usr_storage/data/zhugecai_published/CRA008040/CRR564421/CRR564421_r2.fq.gz
+    OvCRR564424:
+        r1: /usr_storage/data/zhugecai_published/CRA008040/CRR564424/CRR564424_f1.fq.gz
+        r2: /usr_storage/data/zhugecai_published/CRA008040/CRR564424/CRR564424_r2.fq.gz
+    OvCRR564427:
+        r1: /usr_storage/data/zhugecai_published/CRA008040/CRR564427/CRR564427_f1.fq.gz
+        r2: /usr_storage/data/zhugecai_published/CRA008040/CRR564427/CRR564427_r2.fq.gz
+    OvCRR564428:
+        r1: /usr_storage/data/zhugecai_published/CRA008040/CRR564428/CRR564428_f1.fq.gz
+        r2: /usr_storage/data/zhugecai_published/CRA008040/CRR564428/CRR564428_r2.fq.gz
+    OvCRR564429:
+        r1: /usr_storage/data/zhugecai_published/CRA008040/CRR564429/CRR564429_f1.fq.gz
+        r2: /usr_storage/data/zhugecai_published/CRA008040/CRR564429/CRR564429_r2.fq.gz
+    OvCRR564430:
+        r1: /usr_storage/data/zhugecai_published/CRA008040/CRR564430/CRR564430_f1.fq.gz
+        r2: /usr_storage/data/zhugecai_published/CRA008040/CRR564430/CRR564430_r2.fq.gz
+    OvCRR564431:
+        r1: /usr_storage/data/zhugecai_published/CRA008040/CRR564431/CRR564431_f1.fq.gz
+        r2: /usr_storage/data/zhugecai_published/CRA008040/CRR564431/CRR564431_r2.fq.gz
+    OvCRR564432:
+        r1: /usr_storage/data/zhugecai_published/CRA008040/CRR564432/CRR564432_f1.fq.gz
+        r2: /usr_storage/data/zhugecai_published/CRA008040/CRR564432/CRR564432_r2.fq.gz
+        
+
+
+

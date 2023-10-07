@@ -1,0 +1,43 @@
+
+MINIMAP: "/usr_storage/software/minimap2/minimap2"
+
+WGD: "/usr_storage/jcf/2.zhugecai/zy/jcf/filter/calculate/methyid.txt"
+
+
+SAMTOOLS: "/usr_storage/software/samtools-1.11/bin/samtools"
+HISAT_DIR: "/usr_storage/software/hisat2-2.2.1/"
+FASTP: "/usr_storage/jcf/.conda/envs/fastp//bin/fastp"
+Rscript: "/usr_storage/jcf/.conda/envs/R/bin/Rscript"
+gff: "/usr_storage/jcf/2.zhugecai/11.frontiers/0.ref/GWHBGBQ00000000.gff"
+gtf: "/usr_storage/jcf/2.zhugecai/11.frontiers/0.ref/GWHBGBQ00000000.gtf"
+genome: "/usr_storage/jcf/2.zhugecai/11.frontiers/0.ref/GWHBGBQ00000000.genome.fasta"
+
+
+
+inputFiles:
+    N01: /usr_storage/jcf/2.zhugecai/00.diploid/1.ONT_RNA_mapping/0.data/N01.clean.fastq.gz
+    N02: /usr_storage/jcf/2.zhugecai/00.diploid/1.ONT_RNA_mapping/0.data/N02.clean.fastq.gz
+    N03: /usr_storage/jcf/2.zhugecai/00.diploid/1.ONT_RNA_mapping/0.data/N03.clean.fastq.gz
+
+bam:
+        ../../11.frontiers/1.RNA_mapping/2.align/OvCRR564415.sorted.bam
+        ../../11.frontiers/1.RNA_mapping/2.align/OvCRR564416.sorted.bam
+        ../../11.frontiers/1.RNA_mapping/2.align/OvCRR564417.sorted.bam
+        ../../11.frontiers/1.RNA_mapping/2.align/OvCRR564418.sorted.bam
+        ../../11.frontiers/1.RNA_mapping/2.align/OvCRR564419.sorted.bam
+        ../../11.frontiers/1.RNA_mapping/2.align/OvCRR564420.sorted.bam
+        ../../11.frontiers/1.RNA_mapping/2.align/OvCRR564421.sorted.bam
+        ../../11.frontiers/1.RNA_mapping/2.align/OvCRR564422.sorted.bam
+        ../../11.frontiers/1.RNA_mapping/2.align/OvCRR564423.sorted.bam
+        ../../11.frontiers/1.RNA_mapping/2.align/OvCRR564424.sorted.bam
+        ../../11.frontiers/1.RNA_mapping/2.align/OvCRR564425.sorted.bam
+        ../../11.frontiers/1.RNA_mapping/2.align/OvCRR564426.sorted.bam
+        ../../11.frontiers/1.RNA_mapping/2.align/OvCRR564427.sorted.bam
+        ../../11.frontiers/1.RNA_mapping/2.align/OvCRR564428.sorted.bam
+        ../../11.frontiers/1.RNA_mapping/2.align/OvCRR564429.sorted.bam
+        ../../11.frontiers/1.RNA_mapping/2.align/OvCRR564430.sorted.bam
+        ../../11.frontiers/1.RNA_mapping/2.align/OvCRR564431.sorted.bam
+        ../../11.frontiers/1.RNA_mapping/2.align/OvCRR564432.sorted.bam
+
+
+

@@ -1,0 +1,196 @@
+suppressMessages({
+  library(tidyverse)
+  library(seqinr)
+  library(yaml)
+  library(dplyr)
+})
+source("scripts/prepInputFunctions.R")
+source("scripts/readGFF.R")
+
+# Prepare input files for orthology/synteny prediction pipeline
+#
+# For each species we need:
+# - Protein sequences
+# - CDS sequences
+# - Table to convert IDs 
+#   - geneIDs, proteinIDs, transcriptIDs (, symbol, description)
+#   - Protein lengths (to select the longest per gene) (get this from fasta file)
+# - Order and orientation of protein coding genes along the scaffolds/chromosomes 
+#    (orientation, start, end, scaffold/chromosome)
+#   - For genomes were with multiple loci per gene, select a single representative locus
+#
+# This data is gathered from GFF files and CDS/protein fastas.
+# These files are downloaded from the sources given in "speciesMeta.yaml"
+#
+# Issues: 
+# 1. Ensembl geneID version numbers. Should they be included? 
+#   For now i don't see any reason to include them. It is possible to extract them later, perhaps 
+#   add some more columns to the IDtbls.
+# 2. Multiple location for single gene (at least in Ssal)
+#   This is only an issue when position is required. This is resolved by selecting the loci with the longest gene, 
+#   preferentially in a chromosome. The alternative loci are stored in a different file.
+# 3. Mismatch between protein and cds sequences (NCBI only?)
+#   This is only a problem if we use the protein alignment to get the CDS alignment.
+#   MACSE generates CDS alignment directly from nucletide sequences. An alternative solution
+#   is to not use the protein sequences but translate them from the CDS fastas.
+#   NCBI also provides "_translated_cds.faa.gz" 
+# 3b. NCBI sometimes have partial CDS.
+#   This probably means that the CDS is shorter than the AA sequence
+# 4. MACSE can detect frameshifts. How does this affect the treebuilding?
+#
+#
+# Design choices:
+# - Use geneIDs always as the protein/cds sequences are representative of the gene
+# 
+spc = snakemake@params[["spc"]]
+source = snakemake@params[["source"]]
+
+# define output path
+outDirs <- list(
+  genePosTbl = "genePosTbls",
+  geneIDtbls = "geneIDtbls",
+  proteinFastas = "proteinFastas",
+  cdsFastas = "cdsFastas",
+  downloads = "downloads"
+)
+
+# add path prefix to outDirs
+prep_folder <- dirname(dirname(snakemake@output[[1]]))
+outDirs <- map(outDirs, ~ file.path(prep_folder,.x))
+
+destPath <- file.path(outDirs$downloads, spc)
+dir.create(destPath,recursive = T,showWarnings = F)
+
+myDownload <- function(url, destfile, ...){
+  if( file.exists(destfile) ){
+    cat("File already downloaded: ",destfile,"\n")
+  } else {
+    cat("Downloading: ",destfile,"\n")
+    download.file( url=url, destfile=destfile, ...)
+  }
+}
+
+if( source != "local"){
+  for( url in c(snakemake@params[["protein_fasta"]],snakemake@params[["cds_fasta"]],snakemake@params[["gff"]])){
+    myDownload(url = url, destfile = file.path(destPath,basename(url)))
+  }
+}
+
+cat("\n***** Preparing files for",spc,"genome *****\n\n")
+
+# define output files:
+outFile <- list(
+  redundant_genePos = file.path(outDirs$genePosTbl,paste0(spc,"_redundant_genePos.tsv")),
+  genePos = file.path(outDirs$genePosTbl,paste0(spc,"_genePos.tsv")),
+  IDtbl = file.path(outDirs$geneIDtbls,paste0(spc,"_IDtbl.tsv")),
+  proteinFasta = file.path(outDirs$proteinFastas,paste0(spc,".faa")),
+  cdsFasta = file.path(outDirs$cdsFastas,paste0(spc,".fna"))
+)
+
+# get path to local/downloaded files
+if( source == "local"){
+  gffFile = snakemake@params[["gff"]]
+  proteinFastaFile = snakemake@params[["protein_fasta"]]
+  cdsFastaFile = snakemake@params[["cds_fasta"]]
+} else { # downloaded
+  gffFile = file.path(outDirs$downloads, spc, basename(snakemake@params[["gff"]]))
+  proteinFastaFile = file.path(outDirs$downloads, spc, basename(snakemake@params[["protein_fasta"]]))
+  cdsFastaFile = file.path(outDirs$downloads, spc, basename(snakemake@params[["cds_fasta"]]))
+}
+
+#### load gff file ####
+cat("Loading gff file: ",gffFile,"\n")
+
+if( source == "ncbi" ){
+  gffTbls <- convertGFF_ncbi(gffFile)
+} else if( source == "ensembl" ){
+  gffTbls <- convertGFF_ensembl(gffFile)
+} else if ( source == "GigaDB"){
+  gffTbls <- convertGFF_mRNA(gffFile)
+} else if ( source == "BIG"){
+  gffTbls <- convertGFF_accession(gffFile)
+} else {
+  gffTbls <- convertGFF_local(gffFile)
+}
+
+
+#### Save gene positions ####
+cat("Saving gene positions to:",outFile$genePos,"\n")
+
+gffTbls$genePosTbl %>% 
+  # sort by start position
+  arrange(seqname,start) %>% 
+  # deal with genes in multiple positions:
+  filterRedundantGenePos( redundantSaveFile = outFile$redundant_genePos ) %>% 
+  write_tsv( outFile$genePos )
+
+
+#### Read protein sequences and find longest per gene ####
+cat("Loading protein fasta file:",proteinFastaFile,"\n")
+AAseqs <- read.fasta(proteinFastaFile,as.string = T,seqtype="AA")
+
+if( source == "ensembl" ){ # need to remove version suffix
+  names(AAseqs) <- convertIdFun_ENSEMBL(names(AAseqs))
+}
+if ( source == "BIG"){ #label in the protein files contains \t instead of white space
+  names(AAseqs) <- str_extract(names(AAseqs),"^[^\t]+")
+}
+
+cat("Checking for mismatch between GFF and protein fasta:\n")
+checkIDmissing(inFasta = names(AAseqs),inGFF =  gffTbls$IDtbl$proteinID)
+
+
+# add protein length to ID conversion table and mark longest protein per gene
+IDtblWithProteinLength <- 
+  findLongestProtein( gffTbls$IDtbl, seqLengths = setNames(getLength(AAseqs),names(AAseqs)))
+
+# Some protein sequences have dots "." in them. (internal stop codon?)
+# (observed in Salp, Tthy and Hhuc)
+# Since orthofinder cant handle those we replace with dash "-"
+# (Note: this is just a quick fix to get things working. It might be better to just drop these sequences...)
+if( spc %in% c("Salp","Tthy","Hhuc") && source == "local"){
+  AAseqs <- lapply(AAseqs, function(seq)gsub("\\.","-",seq))
+}
+
+
+
+#### save ID conversion table ####
+cat("Saving ID conversion table to:",outFile$IDtbl,"\n")
+write_tsv( IDtblWithProteinLength, outFile$IDtbl)
+
+# use only longest isoform from now on
+longestIsoforms <- filter(IDtblWithProteinLength, is_longest)
+
+
+#### Save longest protein/cds sequence per gene ####
+cat("Saving longest protein sequences to:",outFile$proteinFasta,"\n")
+write.fasta(sequences = AAseqs[longestIsoforms$proteinID],
+            names = longestIsoforms$geneID, # use geneID as identifier!
+            file.out = outFile$proteinFasta)
+
+
+# load cds sequences
+cat("Loading cds fasta file:",cdsFastaFile,"\n")
+CDSseqs <- read.fasta(cdsFastaFile,as.string = T,seqtype = "DNA")
+
+# convert IDs
+if( source == "ncbi" ){
+  names(CDSseqs) <- convertIdFun_CDS_NCBI(names(CDSseqs))
+} else if( source == "ensembl" ){ 
+  # need to remove version suffix
+  names(CDSseqs) <- convertIdFun_ENSEMBL(names(CDSseqs))
+} else if ( source == "BIG"){ #label in the cds files contains \t instead of white space
+  names(CDSseqs) <- str_extract(names(CDSseqs),"^[^\t]+")
+}
+
+
+# NCBI uses proteinIDs for CDS sequences else use trancriptIDs
+cdsID <- ifelse(source == "ncbi" | source == "gcgd", "proteinID", "transcriptID")
+
+cat("Checking for mismatch between GFF and cds fasta:\n")
+checkIDmissing(inFasta = names(CDSseqs),inGFF = gffTbls$IDtbl[[cdsID]])
+
+cat("Saving longest cds fasta to:",outFile$cdsFasta,"\n")
+write.fasta(sequences = CDSseqs[longestIsoforms[[cdsID]]],
+            names = longestIsoforms$geneID, # use geneID as identifier!
+            file.out = outFile$cdsFasta)

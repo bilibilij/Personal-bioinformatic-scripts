@@ -1,0 +1,416 @@
+#!/usr/bin/envs perl -w
+
+#use strict;
+
+my $usage=<<USAGE;
+
+perl $0 WGD flair_collapsed(filtered).gtf genome.fasta outDir command cpu step (re)
+
+3.10685598017575        0.210817717206133       Ovio04457       Ovio13440       0.843856366167796       2-4     0.2-0.3 0.666
+2.84468586650301        0.318339100346021       Ovio04459       Ovio13439       0.0359413300890133      2-4     0.3-0.4 0-0.2
+3.72187549261204        0.397248113626276       Ovio04461       Ovio13438       0.310746884228657       2-4     0.3-0.4 0.2-0.4
+
+USAGE
+
+
+die "$usage\n" unless @ARGV ==7 ||@ARGV == 8;
+
+&check_dependency("ParaFly", "ParaFly");
+&check_dependency("blastn --help 2>/dev/null", "blastn");
+&check_dependency("bedtools getfasta 2>&1", "bedtools");
+
+
+
+my ($com, $dir, $cpu, $step)= ($ARGV[4], $ARGV[3], $ARGV[5], $ARGV[6]);
+
+my (@WGD, %WGD);
+
+open IN, "$ARGV[0]" or die "";
+while (<IN>){
+	chomp;
+	my @line=split/\t/, $_;
+	push @WGD, "$line[2]_$line[3]";
+	$WGD{"$line[2]_$line[3]"}=$_;
+}
+
+close IN;
+
+
+#my %trans;
+my %exon;
+open IN, "$ARGV[1]" or die "";
+while (<IN>){
+	chomp;
+	next unless m/\texon\t/;
+	my @line=split/\t/, $_;
+	die "exon match error in $ARGV[1] $$\n" unless m/gene_id "([^"]*)"; transcript_id "([^"]*)"; exon_number "([^"]*)";/;
+	my ($gid, $tid, $eid)= ($1, $2, $3);
+	$exon{$gid}{$tid}{$eid}="$line[0]\t$line[3]\t$line[4]\t$line[6]";
+
+}
+close IN;
+
+
+
+my ($seqID , %seq);
+open IN, "$ARGV[2]" or die "";
+while (<IN>){
+	chomp;
+	if (m/^>(\S+)/){$seqID=$1;}
+	else{$seq{$seqID}.=$_;}
+}
+close IN;
+
+
+
+mkdir "$dir/exon_blast/" unless -e "$dir/exon_blast/";
+
+
+
+if ($step ==1 || $step eq "all"){
+open COM, ">$com" or die "";
+open MA, ">$dir/id_match.txt" or die "";
+
+foreach my $wgd (@WGD){
+	my ($g1, $g2)= split/_/, $wgd;
+	next unless exists $exon{$g1}&& $exon{$g2};
+	#&exon_blast_com($wgd, \%exon, \%seq, $com, $dir);
+	&exon_blast_com($wgd, \%exon, \%seq, $dir);
+}
+close COM;
+close MA;
+
+`ParaFly -c $com -CPU $cpu`;
+}
+
+###Step2: exon number check
+my (%idf, %idr);
+#idf: key is Nanopore ID and values is newly renamed transcript ID;
+#idr: reverse the key and value in the %idf;
+open IN, "$dir/id_match.txt" or die "";
+while (<IN>){
+	chomp;
+	my @line=split/\t/, $_;
+	my @old=split/_/, $line[0];
+	my @new=split/_/, $line[1];
+	$idf{$old[0]}{$old[1]}=$new[1];
+	print "$old[0]\t$old[1]\t$new[1]\n";
+	$idr{$old[0]}{$new[1]}=$old[1];
+}
+close IN;
+
+my %exon_num;
+foreach my $wgd (@WGD){
+        my ($g1, $g2)= split/_/, $wgd;
+        next unless exists $exon{$g1}&& $exon{$g2};
+	foreach my $trans (keys %{$exon{$g1}}){
+		my $transid=$idf{$g1}{$trans};
+		my $exon_number=scalar keys %{$exon{$g1}{$trans}};
+		$exon_num{$wgd}{$exon_number}{$g1}{$transid}="${g1}_$trans";
+	}
+
+	foreach my $trans (keys %{$exon{$g2}}){
+                my $transid=$idf{$g2}{$trans};
+                my $exon_number=scalar (keys %{$exon{$g2}{$trans}});
+                $exon_num{$wgd}{$exon_number}{$g2}{$transid}="${g2}_$trans";
+        }
+}
+
+mkdir "$dir/results/" unless -e "$dir/results/" ;
+mkdir "$dir/exon_flank/" unless -e " $dir/exon_flank";
+
+open NUM, ">$dir/results/exon_num.txt" or die "";
+my %share_trans;
+my %share_wgd;
+my %trans_exon;
+foreach my $wgd (sort keys %exon_num){
+	foreach my $exon_num (sort {$b<=>$a} keys %{$exon_num{$wgd}}){
+		foreach my $geneid (keys %{$exon_num{$wgd}{$exon_num}}){
+			foreach my $transid (sort keys %{$exon_num{$wgd}{$exon_num}{$geneid}}){
+				if (scalar %{$exon_num{$wgd}{$exon_num}} == 1 ){
+					print NUM "$wgd\t$exon_num\t$geneid\t$transid\t$exon_num{$wgd}{$exon_num}{$geneid}{$transid}\tprivate\n";
+				}else{
+					#&exon_blast_com($wgd, \%exon, \%seq, $dir, \%idf);
+					print NUM "$wgd\t$exon_num\t$geneid\t$transid\t$exon_num{$wgd}{$exon_num}{$geneid}{$transid}\tshared\n";
+					#@$share_trans{$geneid->$transid};
+					#push @{$share_trans -> {$geneid}}, $transid;
+					my $old_id=(split/_/, $exon_num{$wgd}{$exon_num}{$geneid}{$transid})[1];
+					$share_trans{$geneid}{$old_id}=1;
+					$share_wgd{$wgd}=1;
+					$trans_exon{$wgd}{$exon_num}{$geneid}{$old_id}=1;
+				}
+			}
+		}
+	}
+}
+close NUM;
+
+
+open COM, ">$dir/exon_flanking_blast.com" or die "";
+###Step3 : exon blast check
+#my %blast_check;
+foreach my $wgd (sort keys %share_wgd){
+	#&exon_blast_com($wgd, \%exon, \%seq, $dir, \%idf, \%share_trans);
+}
+close COM;
+
+
+
+if ($step == 3 || $step eq "all"){
+mkdir "$dir/1.blast_flank/"  unless -e "$dir/1.blast_flank/";
+#`/usr/bin/rm -rf $dir/exon_sort/*`;
+open OUT, ">$dir/exon_sort.com" or die "";
+open FLA, ">$dir/exon_flank.com" or die $$;
+open BED, ">$dir/get_fasta.com" or die $$;
+foreach my $wgd (sort keys %trans_exon){
+
+	foreach my $exon_num ( sort {$b<=>$a} keys  %{$trans_exon{$wgd}}){
+		foreach my $geneid (keys %{$trans_exon{$wgd}{$exon_num}}){
+			#`/usr/bin/rm -rf $dir/exon_sort/${wgd}_${exon_num}_${geneid}.$i.fa` if -e "$dir/exon_sort/${wgd}_${exon_num}_${geneid}.$i.fa";
+			foreach my $trans ( keys %{$trans_exon{$wgd}{$exon_num}{$geneid}}){
+				my $ss = (split/\t/, $exon{$geneid}{$trans}{"0"})[3];
+				print "$trans\t$ss\n";
+				#if ($ss eq "-"){
+					for (my $i=0;$i<=$exon_num-1;$i++){
+						#exon fasta extract
+						##open FA, ">>$dir/1.blast_flank/${wgd}_${exon_num}_${geneid}.$i.fa" or die $$;
+						my $j= $exon_num-1-$i;
+						my ($chr, $start, $end, $strand) = split/\t/, $exon{$geneid}{$trans}{$j};
+						##my $seq = $seq{$chr};
+						my $len=$end-$start+1;
+						print BED "echo -e \"$chr\\t$start-1\\t$len\\n\" | bedtools getfasta -fi $ARGV[2] -bed - -rna  >> >$dir/1.blast_flank/${wgd}_${exon_num}_${geneid}.$i.fa ";
+						echo -e "Chr01\t1000\t1500\tout\t1\t-" | bedtools getfasta -fi /usr_storage/jcf/2.zhugecai/00.diploid/Ovio_1200.genome.fasta -bed - -name -s
+						##$seq=substr($seq, $start-1, $len);
+						##$seq=~tr/ATCGatcg/TAGCtagc/;
+						##$seq=reverse($seq);
+						##my $id=$idf{$geneid}{$trans};
+						##print FA ">${geneid}_${id}_$i\n$seq\n";
+						##close FA;
+
+						#flanking fasta extract
+                                                open UP, ">>$dir/1.blast_flank/${wgd}_${exon_num}_${geneid}.$i.flank.up.fa" or die $$;
+                                                open DW, ">>$dir/1.blast_flank/${wgd}_${exon_num}_${geneid}.$i.flank.down.fa" or die $$;
+						#up stream flanking
+						$seq = $seq{$chr};
+						$seq=substr($seq, $end-1-45, 90);
+                                                $seq=~tr/ATCGatcg/TAGCtagc/;
+                                                $seq=reverse($seq);
+                                                print UP ">${geneid}_${id}_${i}_up\n$seq\n";
+						#down stream flanking 
+						$seq = $seq{$chr};
+						$seq=substr($seq, $start-1-45, 90);
+						$seq=~tr/ATCGatcg/TAGCtagc/;
+						$seq=reverse($seq);
+						print DW ">${geneid}_${id}_${i}_down\n$seq\n";
+                                                close UP;
+                                                close DW;
+
+						#}
+
+				}else{
+
+                                        for (my $i=0;$i<=$exon_num-1;$i++){
+						#exon
+                                                open FA, ">>$dir/1.blast_flank/${wgd}_${exon_num}_${geneid}.$i.fa" or die $$;
+                                                my ($chr, $start, $end, $strand) = split/\t/, $exon{$geneid}{$trans}{$i};
+                                                my $seq = $seq{$chr};
+                                                my $len=$end-$start+1;
+                                                $seq=substr($seq, $start-1, $len);
+                                                my $id=$idf{$geneid}{$trans};
+                                                print FA  ">${geneid}_${id}_$i\n$seq\n";
+                                                close FA;
+						#flanking 
+						open UP, ">>$dir/1.blast_flank/${wgd}_${exon_num}_${geneid}.$i.flank.up.fa" or die $$;
+						open DW, ">>$dir/1.blast_flank/${wgd}_${exon_num}_${geneid}.$i.flank.down.fa" or die $$;
+						#upstream
+				                $seq = $seq{$chr};
+                                                $seq=substr($seq, $start-1-45, 90);
+						print UP ">${geneid}_${id}_${i}_up\n$seq\n";
+						#downstream
+						$seq = $seq{$chr};
+                                                $seq=substr($seq, $end-1-45, 90);
+                                                print DW ">${geneid}_${id}_${i}_down\n$seq\n";
+						close UP;
+						close DW;
+                                        }
+
+				}
+			}
+
+		}
+	my ($g1, $g2)= split/_/, $wgd;
+	for (my $i=0;$i<=$exon_num-1;$i++){
+		print OUT "makeblastdb -in $dir/1.blast_flank/${wgd}_${exon_num}_${g1}.$i.fa  -dbtype nucl -out $dir/1.blast_flank/${wgd}_${exon_num}_${g1}.$i  2>&1>/dev/null ; blastn -db $dir/1.blast_flank//${wgd}_${exon_num}_${g1}.$i  -query $dir/1.blast_flank/${wgd}_${exon_num}_${g2}.$i.fa -outfmt 6 -out $dir/1.blast_flank/${wgd}_${exon_num}.$i.blast.tab -evalue 1e-3 -task blastn-short 2>&1>/dev/null\n";
+		print FLA "makeblastdb -in $dir/1.blast_flank/${wgd}_${exon_num}_${g1}.$i.flank.down.fa  -dbtype nucl -out $dir/1.blast_flank/${wgd}_${exon_num}_${g1}.$i.flank.down  2>&1>/dev/null ;blastn -db $dir/1.blast_flank/${wgd}_${exon_num}_${g1}.$i.flank.down  -query $dir/1.blast_flank/${wgd}_${exon_num}_${g2}.$i.flank.down.fa -outfmt 6 -out $dir/1.blast_flank/${wgd}_${exon_num}_flank_down.tab -evalue 1e-3 -task blastn-short 2>&1>/dev/null\n";
+		print FLA "makeblastdb -in $dir/1.blast_flank/${wgd}_${exon_num}_${g1}.$i.flank.up.fa  -dbtype nucl -out $dir/1.blast_flank/${wgd}_${exon_num}_${g1}.$i.flank.up  2>&1>/dev/null ;blastn -db $dir/1.blast_flank/${wgd}_${exon_num}_${g1}.$i.flank.up  -query $dir/1.blast_flank/${wgd}_${exon_num}_${g2}.$i.flank.up.fa -outfmt 6 -out $dir/1.blast_flank/${wgd}_${exon_num}_flank_up.tab -evalue 1e-3 -task blastn-short 2>&1>/dev/null\n";
+	}
+	}
+}
+close OUT;
+close FLA;
+close BED;
+`ParaFly -c $dir/get_fasta.com -CPU $cpu`;
+`ParaFly -c $dir/exon_sort.com -CPU $cpu`;
+`ParaFly -c $dir/exon_flank.com -CPU $cpu`;
+}
+
+my %exon_shared;
+foreach my $wgd (sort keys %trans_exon){
+        foreach my $exon_num ( sort {$b<=>$a} keys  %{$trans_exon{$wgd}}){
+		#my (%rexon_len, %qexon_len);
+		#my %rblast, %qblast, %rblast_len, %qblast_len;
+		#my %coverage_pass;
+		my ($g1, $g2)= split/_/, $wgd;
+		for (my $i=0;$i<=$exon_num-1;$i++){
+			#Step1.1: get each exon length of each transcritps;
+			#&fa_len("$dir/exon_sort/${wgd}_${exon_num}_${g2}.$i.fa", \%qexon_len);
+			#&fa_len("$dir/exon_sort/${wgd}_${exon_num}_${g1}.$i.fa", \%rexon_len);
+			#Step2.2: extract align result from blast.tab
+			#&blast_extract("$dir/exon_sort/${wgd}_${exon_num}.$i.blast.tab", \%rblast, \%rblast_len);
+		}
+	}
+}
+
+sub blast_extract{
+	my $file=shift;
+	my $blast=shift;
+	my $blast_len=shift;
+	open IN, "$file" or die $$;
+	while (<IN>){
+		chomp;
+		my ($qid, $rid, $iden, $aln, $mis, $gap, $qstart, $qend, $rstart, $rend, $evalue, $score)=split/\t/, $_;
+		my $qlen=$qend-$qstart+1;
+		my $rlen=$rend-$rstart+1;
+		my $match=$aln-$mis-$gap;	
+	}
+	close IN;
+}
+
+
+
+
+
+
+sub fa_len{
+	my $file=shift;
+	my $trans_len=shift;
+	my ($geneid, $transid, $exonID);
+	open IN, "$file" or die "";
+	while (<IN>){
+		chomp;
+		if (m/^>([^_]*)_([^_]*)_(\d+)/){
+			$geneid=$1;
+			$transid=$2;
+			$exonID=$3;
+		}else{
+			$$trans_len{$geneid}{$transid}{$exonID}+=length($_);
+		}
+	}
+	close IN;
+}
+
+
+
+
+
+sub exon_blast_com{
+	 my ($wgd, $exon, $seq, $dir, $idf, $share_trans);
+        if (scalar @_ == 4){
+                ($wgd, $exon, $seq, $dir) = @_;
+
+        }elsif (scalar @_ == 6){
+                ($wgd, $exon, $seq, $dir, $idf, $share_trans) = @_;
+
+        }
+
+	my ($g1, $g2)= split/_/, $wgd;
+	if (scalar @_ == 4){
+		if ($step == 1 || $step eq "all"){
+		&extract_fa($g1, $exon, $seq, "$dir/exon_blast/${g1}_exon.fa");
+		&extract_fa($g2, $exon, $seq, "$dir/exon_blast/${g2}_exon.fa");}
+		print COM "makeblastdb -in $dir/exon_blast/${g1}_exon.fa -dbtype nucl -out $dir/exon_blast/${g1}_exon  -parse_seqids 2>&1>/dev/null ;    blastn -db  $dir/exon_blast/${g1}_exon -query $dir/exon_blast/${g2}_exon.fa -outfmt 6 -out $dir/exon_blast/$wgd.exon.blast.tab -evalue 1e-3 2>&1>/dev/null \n";
+	}
+	if (scalar @_ == 6){
+		if ($step == 3 || $step eq "all"){
+                &extract_fa($g1, $exon, $seq, "$dir/exon_flank/${g1}_exon_flank.fa", $idf, $share_trans);
+                &extract_fa($g2, $exon, $seq, "$dir/exon_flank/${g2}_exon.flank.fa", $idf, $share_trans);}
+		print COM "makeblastdb -in $dir/exon_flank/${g1}_exon_flank.fa -dbtype nucl -out $dir/exon_flank/${g1}_exon_flank  -parse_seqids 2>&1>/dev/null ;    blastn -db  $dir/exon_flank/${g1}_exon_flank -query $dir/exon_flank/${g2}_exon.flank.fa -outfmt 6 -out $dir/exon_flank/${wgd}_exon.flank.tab -evalue 1e-3 2>&1>/dev/null \n";
+	}
+}	
+
+sub extract_fa{
+	my ($gene, $exon, $seq, $out, $idf, $share_trans);
+	if (scalar @_ == 4){
+		($gene, $exon, $seq, $out) = @_;
+	
+	}elsif (scalar @_ == 6){
+		($gene, $exon, $seq, $out, $idf, $share_trans) = @_;
+	}
+	#my $match=shift;
+	#open MA, ">>$match" or die "";Ovio04499_Ovio13395.exon.blast.tab
+	if (scalar @_ == 4){
+	open FA, ">$out" or die "";
+	my $number=1;
+	foreach my $trans (sort keys %{${$exon}{$gene}}){
+                foreach my $ex (sort keys %{${$exon}{$gene}{$trans}}){
+                        my ($chr, $start, $end, $strand) = split/\t/, $$exon{$gene}{$trans}{$ex};
+                        my $seq = $$seq{$chr};
+				my $len=$end-$start+1;
+                        if ($strand eq "+"){
+                                $seq=substr($seq,$start-1, $len);
+                        }else{
+				
+                                $seq=substr($seq, $start-1, $len);
+                                $seq=~tr/ATCGatcg/TAGCtagc/;
+                                $seq=reverse($seq);
+                        }
+			print FA ">${gene}_trans${number}_${ex}_${strand}_$chr:$start-$end\n$seq\n";
+			print MA "${gene}_${trans}_${ex}_${strand}_$chr:$start-$end\t${gene}_trans${number}_${ex}_${strand}_$chr:$start-$end\n";
+                }
+		$number++;
+	}
+	close FA;
+	}elsif (scalar @_ == 6){
+	open FA, ">$out" or die "";
+	foreach my $trans (sort keys %{${$exon}{$gene}}){
+		print "$trans\t$$share_trans{$gene}{$trans}\n";
+		#next unless $trans eq $trans_homo;
+		next unless exists $$share_trans{$gene}{$trans};
+		print FA ">${gene}_$$idf{$gene}{$trans}\n";
+		#print FA ">${gene}_$trans\n";
+		foreach my $ex (sort keys %{${$exon}{$gene}{$trans}}){
+			my ($chr, $start, $end, $strand) = split/\t/, $$exon{$gene}{$trans}{$ex};
+			my $Chr_seq = $$seq{$chr};
+			my $seq;
+			#extract fasta
+			if ($strand eq "+"){
+				#$seq=substr($$seq{$chr},$start-1-45, 90);
+				#$seq.=substr($$seq{$chr},$end-1-45, 90);
+				$seq=substr($Chr_seq,$start-1-45, 90);
+                                $seq.=substr($Chr_seq,$end-1-45, 90);
+
+			}else{
+				$seq=substr($Chr_seq,$start-1-45, 90);
+				$seq.=substr($Chr_seq,$end-1-45, 90);
+                                $seq=~tr/ATCGatcg/TAGCtagc/;
+                                $seq=reverse($seq);
+                        }
+			print FA "$seq";
+		}
+		print FA"\n";
+	}
+	close FA;
+	}
+}
+
+sub check_dependency {
+        my $software_info =shift;
+        my $match = shift;
+        if ($software_info =~ m/$match/) {
+            print STDERR "$match:\tOK\n";
+        }
+        else {
+            die "$match:\tFailed\n\n";
+        }
+}
+
